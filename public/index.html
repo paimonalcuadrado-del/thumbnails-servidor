@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🖼️ Convertidor de Imágenes - PNG a WebP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text-light: #f1f5f9;
+            --text-gray: #94a3b8;
+            --border: #334155;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: var(--text-light);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.6s ease;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 1.2rem;
+            color: var(--text-gray);
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+            animation: fadeIn 0.8s ease;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .label {
+            color: var(--text-gray);
+            font-size: 0.9rem;
+        }
+
+        .upload-section {
+            background: var(--bg-card);
+            padding: 2rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            animation: fadeIn 1s ease;
+        }
+
+        .upload-area {
+            border: 3px dashed var(--border);
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: var(--bg-dark);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .upload-area.dragging {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: scale(1.05);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            animation: fadeIn 1.2s ease;
+        }
+
+        .image-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.3s, box-shadow 0.3s;
+            animation: scaleIn 0.4s ease;
+        }
+
+        .image-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .image-info {
+            padding: 1rem;
+        }
+
+        .image-name {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: var(--text-light);
+            word-break: break-all;
+        }
+
+        .image-meta {
+            font-size: 0.85rem;
+            color: var(--text-gray);
+            margin-bottom: 1rem;
+        }
+
+        .image-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            font-size: 1.2rem;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.2);
+            border-left: 4px solid var(--success);
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.2);
+            border-left: 4px solid var(--danger);
+        }
+
+        .alert-info {
+            background: rgba(99, 102, 241, 0.2);
+            border-left: 4px solid var(--primary);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            padding: 2rem;
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content img {
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); }
+            to { transform: translateX(0); }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-gray);
+        }
+
+        .empty-state-icon {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+            
+            .gallery {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖼️ Convertidor de Imágenes</h1>
+            <p>Convierte PNG y JPG a WebP con almacenamiento en Cloudflare R2</p>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="value" id="totalImages">0</div>
+                <div class="label">Total de Imágenes</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" id="cacheHits">0</div>
+                <div class="label">Cache Hits</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" id="hitRate">0%</div>
+                <div class="label">Hit Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="value" id="cacheKeys">0</div>
+                <div class="label">Imágenes en Caché</div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <h2 style="margin-bottom: 1.5rem;">📤 Subir Nueva Imagen</h2>
+            <div id="uploadArea" class="upload-area">
+                <div class="upload-icon">☁️</div>
+                <h3>Arrastra una imagen aquí o haz clic para seleccionar</h3>
+                <p style="color: var(--text-gray); margin-top: 0.5rem;">Formatos: PNG, JPG • Máximo 10MB</p>
+                <input type="file" id="fileInput" accept="image/png,image/jpeg,image/jpg">
+            </div>
+            <div id="uploadStatus" style="margin-top: 1rem;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2>🖼️ Galería de Imágenes</h2>
+            <div>
+                <button class="btn btn-success btn-small" onclick="loadImages()">🔄 Recargar</button>
+                <button class="btn btn-danger btn-small" onclick="clearCache()">🗑️ Limpiar Caché</button>
+            </div>
+        </div>
+
+        <div id="gallery" class="gallery">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Cargando imágenes...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="imageModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 id="modalTitle"></h3>
+                <button class="btn btn-danger btn-small" onclick="closeModal()">✖️ Cerrar</button>
+            </div>
+            <img id="modalImage" src="" alt="">
+            <div id="modalInfo"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+
+        // Event listeners para drag & drop
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            const file = e.dataTransfer.files[0];
+            if (file) uploadImage(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) uploadImage(file);
+        });
+
+        // Subir imagen
+        async function uploadImage(file) {
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!file.type.startsWith('image/')) {
+                showAlert('Por favor selecciona una imagen válida', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            statusDiv.innerHTML = `
+                <div class="alert alert-info">
+                    <div class="spinner" style="width: 20px; height: 20px; border-width: 2px; display: inline-block; vertical-align: middle; margin-right: 10px;"></div>
+                    Subiendo y convirtiendo imagen...
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`${API_URL}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            ✅ <strong>${data.fileName}</strong> subida correctamente<br>
+                            ${data.converted ? `🔄 Convertida de ${data.originalName}` : ''}<br>
+                            📊 Reducción: ${data.reduction} (${formatBytes(data.originalSize)} → ${formatBytes(data.finalSize)})<br>
+                            🔗 <a href="${data.url}" target="_blank" style="color: var(--success);">Ver imagen</a>
+                        </div>
+                    `;
+                    fileInput.value = '';
+                    loadImages();
+                    loadCacheStats();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Cargar imágenes
+        async function loadImages() {
+            const gallery = document.getElementById('gallery');
+            gallery.innerHTML = '<div class="loading"><div class="spinner"></div><p>Cargando imágenes...</p></div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/images`);
+                const data = await response.json();
+
+                document.getElementById('totalImages').textContent = data.count;
+
+                if (data.images.length === 0) {
+                    gallery.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <h3>No hay imágenes todavía</h3>
+                            <p>Sube tu primera imagen para comenzar</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                gallery.innerHTML = data.images.map(img => `
+                    <div class="image-card">
+                        <img src="${img.url}?format=webp" alt="${img.fileName}" loading="lazy">
+                        <div class="image-info">
+                            <div class="image-name">📄 ${img.fileName}</div>
+                            <div class="image-meta">
+                                📦 ${formatBytes(img.size)}<br>
+                                📅 ${new Date(img.lastModified).toLocaleString('es-ES')}
+                            </div>
+                            <div class="image-actions">
+                                <button class="btn btn-primary btn-small" onclick="viewImage('${img.fileName}', '${img.url}')">
+                                    👁️ Ver
+                                </button>
+                                <button class="btn btn-success btn-small" onclick="copyUrl('${img.url}')">
+                                    📋 Copiar URL
+                                </button>
+                                <button class="btn btn-danger btn-small" onclick="deleteImage('${img.fileName}')">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                gallery.innerHTML = `
+                    <div class="alert alert-error">
+                        ❌ Error al cargar imágenes: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Cargar estadísticas del caché
+        async function loadCacheStats() {
+            try {
+                const response = await fetch(`${API_URL}/api/cache/stats`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('cacheHits').textContent = data.stats.hits;
+                    document.getElementById('hitRate').textContent = data.stats.hitRate;
+                    document.getElementById('cacheKeys').textContent = data.stats.keys;
+                }
+            } catch (error) {
+                console.error('Error al cargar stats del caché:', error);
+            }
+        }
+
+        // Ver imagen en modal
+        function viewImage(fileName, url) {
+            const modal = document.getElementById('imageModal');
+            const modalImage = document.getElementById('modalImage');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalInfo = document.getElementById('modalInfo');
+
+            modalTitle.textContent = fileName;
+            modalImage.src = url + '?format=webp';
+            modalInfo.innerHTML = `
+                <div style="margin-top: 1rem;">
+                    <p><strong>URL WebP:</strong></p>
+                    <input type="text" value="${url}?format=webp" readonly style="width: 100%; padding: 0.5rem; margin: 0.5rem 0; background: var(--bg-dark); color: var(--text-light); border: 1px solid var(--border); border-radius: 4px;">
+                    <p><strong>URL PNG:</strong></p>
+                    <input type="text" value="${url}?format=png" readonly style="width: 100%; padding: 0.5rem; margin: 0.5rem 0; background: var(--bg-dark); color: var(--text-light); border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            `;
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').classList.remove('active');
+        }
+
+        // Copiar URL al portapapeles
+        async function copyUrl(url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                showAlert('✅ URL copiada al portapapeles', 'success');
+            } catch (error) {
+                showAlert('❌ Error al copiar URL', 'error');
+            }
+        }
+
+        // Eliminar imagen
+        async function deleteImage(fileName) {
+            if (!confirm(`¿Estás seguro de eliminar ${fileName}?`)) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/image/${fileName}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('✅ Imagen eliminada correctamente', 'success');
+                    loadImages();
+                    loadCacheStats();
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                showAlert('❌ Error al eliminar: ' + error.message, 'error');
+            }
+        }
+
+        // Limpiar caché
+        async function clearCache() {
+            if (!confirm('¿Limpiar todo el caché de conversiones?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/cache/clear`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('✅ Caché limpiado correctamente', 'success');
+                    loadCacheStats();
+                }
+            } catch (error) {
+                showAlert('❌ Error al limpiar caché: ' + error.message, 'error');
+            }
+        }
+
+        // Mostrar alertas
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertDiv.style.position = 'fixed';
+            alertDiv.style.top = '20px';
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '2000';
+            alertDiv.style.minWidth = '300px';
+            
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.style.opacity = '0';
+                setTimeout(() => alertDiv.remove(), 300);
+            }, 3000);
+        }
+
+        // Formatear bytes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Cerrar modal al hacer clic fuera
+        document.getElementById('imageModal').addEventListener('click', (e) => {
+            if (e.target.id === 'imageModal') closeModal();
+        });
+
+        // Cargar datos al iniciar
+        loadImages();
+        loadCacheStats();
+
+        // Actualizar stats cada 30 segundos
+        setInterval(loadCacheStats, 30000);
+    </script>
+</body>
+</html>
