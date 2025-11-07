@@ -2,8 +2,6 @@
 # Un username por línea
 # Las líneas vacías y que empiezan con # son ignoradas
 
-admin
-moderator1
-moderator2
-JohnDoe
-JaneDoe
+FlozWer
+GabriV4
+
