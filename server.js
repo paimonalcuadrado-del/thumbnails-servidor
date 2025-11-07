@@ -74,6 +74,8 @@ async function loadModerators() {
   } catch (error) {
     console.error('Error al leer moderators.txt:', error.message);
     return [];
+
+
   }
 }
 
