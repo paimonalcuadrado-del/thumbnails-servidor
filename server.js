@@ -451,11 +451,10 @@ app.listen(PORT, () => {
 });
 
 // ============================================
-// ENDPOINT: Subir PNG binario directo (sin multipart)
+// ENDPOINT: Subir PNG binario directo (sin multipart, usando express.raw)
 // ============================================
-app.post('/api/upload-direct', async (req, res) => {
+app.post('/api/upload-direct', express.raw({ type: 'image/png', limit: '10mb' }), async (req, res) => {
   try {
-    // Leer nombre de archivo por query o header
     let fileName = req.query.fileName || req.headers['x-filename'];
     if (!fileName) {
       return res.status(400).json({ success: false, error: 'fileName es requerido en query o header x-filename' });
@@ -464,47 +463,37 @@ app.post('/api/upload-direct', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Solo se permite subir archivos PNG' });
     }
 
-    // Leer el body como buffer
-    let chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
-    req.on('end', async () => {
-      const buffer = Buffer.concat(chunks);
-      const originalSize = buffer.length;
-      const baseName = require('path').basename(fileName, '.png');
+    const buffer = req.body;
+    const originalSize = buffer.length;
+    const baseName = require('path').basename(fileName, '.png');
 
-      // Convertir PNG a WebP
-      let processedBuffer = await sharp(buffer)
-        .webp({ quality: 85 })
-        .toBuffer();
-      const finalFileName = `${baseName}.webp`;
-      const finalSize = processedBuffer.length;
-      const reduction = originalSize > 0 ? ((1 - finalSize / originalSize) * 100).toFixed(2) : 0;
+    let processedBuffer = await sharp(buffer)
+      .webp({ quality: 85 })
+      .toBuffer();
+    const finalFileName = `${baseName}.webp`;
+    const finalSize = processedBuffer.length;
+    const reduction = originalSize > 0 ? ((1 - finalSize / originalSize) * 100).toFixed(2) : 0;
 
-      // Subir a Cloudflare R2
-      const uploadParams = {
-        Bucket: BUCKET_NAME,
-        Key: finalFileName,
-        Body: processedBuffer,
-        ContentType: 'image/webp',
-        CacheControl: 'public, max-age=31536000',
-      };
-      await r2Client.send(new PutObjectCommand(uploadParams));
-      imageCache.del(finalFileName);
+    const uploadParams = {
+      Bucket: BUCKET_NAME,
+      Key: finalFileName,
+      Body: processedBuffer,
+      ContentType: 'image/webp',
+      CacheControl: 'public, max-age=31536000',
+    };
+    await r2Client.send(new PutObjectCommand(uploadParams));
+    imageCache.del(finalFileName);
 
-      res.json({
-        success: true,
-        fileName: finalFileName,
-        originalName: fileName,
-        converted: true,
-        originalSize: originalSize,
-        finalSize: finalSize,
-        reduction: `${reduction}%`,
-        url: `${PUBLIC_URL}/api/image/${finalFileName}`,
-        directUrl: `${PUBLIC_URL}/api/image/${finalFileName}?format=webp`
-      });
-    });
-    req.on('error', err => {
-      res.status(500).json({ success: false, error: err.message });
+    res.json({
+      success: true,
+      fileName: finalFileName,
+      originalName: fileName,
+      converted: true,
+      originalSize: originalSize,
+      finalSize: finalSize,
+      reduction: `${reduction}%`,
+      url: `${PUBLIC_URL}/api/image/${finalFileName}`,
+      directUrl: `${PUBLIC_URL}/api/image/${finalFileName}?format=webp`
     });
   } catch (error) {
     console.error('Error en upload-direct:', error);
