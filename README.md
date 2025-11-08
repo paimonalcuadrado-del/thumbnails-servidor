@@ -19,10 +19,14 @@ Servidor Node.js con Express que convierte automáticamente imágenes PNG/JPG a 
 
 - [🔐 Autenticación por API Key](API_AUTHENTICATION.md) - Cómo generar y usar API keys
 - [🎮 Integración con Geode Mod](GEODE_INTEGRATION.md) - Ejemplos en C++ para el mod
+- [📋 Guía de Migración](MIGRATION_GUIDE.md) - Migrar de endpoints legacy a v1
+- [🔒 Resumen de Seguridad](SECURITY_SUMMARY.md) - Análisis de seguridad y vulnerabilidades
 - [🛡️ Sistema de Moderadores](MODERATORS.md) - Gestión de moderadores
 - [💚 Keep-Alive](KEEP_ALIVE.md) - Mantener el servidor activo en Render
 
 ## 🚀 Inicio Rápido
+
+> **⚠️ IMPORTANTE**: Esta versión introduce autenticación por API key. Ver [Guía de Migración](MIGRATION_GUIDE.md) si estás actualizando desde una versión anterior.
 
 ### Requisitos
 
