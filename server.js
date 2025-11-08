@@ -292,13 +292,25 @@ app.post('/api/v1/upload-direct', requireApiKey, express.raw({ type: 'image/png'
     if (!fileName) {
       return res.status(400).json({ success: false, error: 'fileName es requerido en query o header x-filename' });
     }
+    
+    // Asegurar que fileName es un string (prevenir type confusion)
+    if (Array.isArray(fileName)) {
+      fileName = fileName[0];
+    }
+    fileName = String(fileName);
+    
     if (!fileName.toLowerCase().endsWith('.png')) {
       return res.status(400).json({ success: false, error: 'Solo se permite subir archivos PNG' });
     }
 
+    // Verificar que el body es un Buffer válido
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ success: false, error: 'Cuerpo de la petición debe ser datos binarios PNG' });
+    }
     const buffer = req.body;
-    const originalSize = buffer.length;
-    const baseName = require('path').basename(fileName, '.png');
+    // Type guard: ahora sabemos que req.body es definitivamente un Buffer
+    const originalSize = Number(buffer.length);
+    const baseName = path.basename(fileName, '.png');
 
     let processedBuffer = await sharp(buffer)
       .webp({ quality: 85 })
@@ -777,7 +789,6 @@ app.listen(PORT, () => {
   setTimeout(keepAlive, 5 * 60 * 1000);
 });
 
-// ============================================
 // LEGACY: Subir PNG binario directo (sin multipart)
 // ============================================
 app.post('/api/upload-direct', express.raw({ type: 'image/png', limit: '10mb' }), async (req, res) => {
@@ -787,13 +798,25 @@ app.post('/api/upload-direct', express.raw({ type: 'image/png', limit: '10mb' })
     if (!fileName) {
       return res.status(400).json({ success: false, error: 'fileName es requerido en query o header x-filename' });
     }
+    
+    // Asegurar que fileName es un string (prevenir type confusion)
+    if (Array.isArray(fileName)) {
+      fileName = fileName[0];
+    }
+    fileName = String(fileName);
+    
     if (!fileName.toLowerCase().endsWith('.png')) {
       return res.status(400).json({ success: false, error: 'Solo se permite subir archivos PNG' });
     }
 
+    // Verificar que el body es un Buffer válido
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ success: false, error: 'Cuerpo de la petición debe ser datos binarios PNG' });
+    }
     const buffer = req.body;
-    const originalSize = buffer.length;
-    const baseName = require('path').basename(fileName, '.png');
+    // Type guard: ahora sabemos que req.body es definitivamente un Buffer
+    const originalSize = Number(buffer.length);
+    const baseName = path.basename(fileName, '.png');
 
     let processedBuffer = await sharp(buffer)
       .webp({ quality: 85 })

@@ -37,7 +37,8 @@ function requireApiKey(req, res, next) {
 
   // Verificar que la API key proporcionada es válida
   if (!validKeys.includes(apiKey)) {
-    console.warn(`🔒 Intento de acceso con API key inválida: ${apiKey.substring(0, 8)}...`);
+    // No registrar la API key en logs por seguridad
+    console.warn('🔒 Intento de acceso con API key inválida');
     return res.status(403).json({
       success: false,
       error: 'API key inválida. Verifica tu clave de acceso.',
