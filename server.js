@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const sharp = require('sharp');
-const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, ListBucketsCommand } = require('@aws-sdk/client-s3');
 const NodeCache = require('node-cache');
 const path = require('path');
 const fs = require('fs').promises;
@@ -24,24 +24,18 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 /**
- * Valida la configuración de R2 y normaliza R2_ENDPOINT si es necesario.
- * Devuelve true si la configuración parece válida, false si hay un error fatal.
+ * Valida y normaliza R2_ENDPOINT: no vacío, comienza con https:// y no termina con '/'.
+ * Si el endpoint termina con '/', lo corrige automáticamente y muestra una advertencia.
+ * No fuerza agregar 'https://' automáticamente: si no comienza con https:// se considera un error de configuración.
  */
-function validateR2Config() {
+function normalizeAndValidateR2Endpoint() {
   const raw = process.env.R2_ENDPOINT || '';
-
   if (!raw || raw.trim() === '') {
     console.error('❌ R2_ENDPOINT vacío. Debes definir la variable de entorno R2_ENDPOINT.');
-    return false;
+    return null;
   }
 
   let endpoint = raw.trim();
-
-  // Si no tiene prefijo http/https, asumimos https y añadimos, mostrando advertencia
-  if (!endpoint.toLowerCase().startsWith('http://') && !endpoint.toLowerCase().startsWith('https://')) {
-    console.warn(`⚠️ R2_ENDPOINT no tenía esquema. Se añadirá 'https://' automáticamente -> ${endpoint}`);
-    endpoint = `https://${endpoint}`;
-  }
 
   // Eliminar barras finales redundantes
   if (endpoint.endsWith('/')) {
@@ -49,31 +43,61 @@ function validateR2Config() {
     endpoint = endpoint.replace(/\/+$/, '');
   }
 
+  // Verificar que comience con https://
+  if (!endpoint.startsWith('https://')) {
+    console.error('❌ R2_ENDPOINT debe comenzar con https://');
+    return null;
+  }
+
   // Normalizar en env para uso posterior
   process.env.R2_ENDPOINT = endpoint;
+  return endpoint;
+}
 
-  // Intentar parsear la URL
+/**
+ * Crea un S3Client configurado para Cloudflare R2.
+ */
+function createR2Client() {
   try {
-    const url = new URL(process.env.R2_ENDPOINT);
-    if (!url.hostname) {
-      console.error('❌ R2_ENDPOINT mal formado (sin hostname).');
-      return false;
-    }
+    const endpoint = normalizeAndValidateR2Endpoint();
+    if (!endpoint) return null;
 
-    // Solo mostrar dominio en logs, no claves
-    console.log(`🌐 R2 endpoint: ${url.hostname}`);
+    console.log(`🔗 Conectando a Cloudflare R2: ${endpoint}`);
 
-    // Protocol check
-    if (url.protocol === 'https:') {
-      console.log('🔒 TLS OK');
-    } else {
-      console.warn('⚠️ R2_ENDPOINT no usa HTTPS. Se recomienda usar https:// para conexiones seguras.');
-    }
+    const client = new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      },
+      forcePathStyle: true, // obligatorio para R2
+      tls: true, // fuerza SSL/TLS
+    });
 
-    return true;
+    return client;
   } catch (err) {
-    console.error('❌ R2_ENDPOINT mal formado:', err.message);
-    return false;
+    console.error('⚠️ Error creando cliente R2:', err);
+    return null;
+  }
+}
+
+/**
+ * Testea la conexión TLS hacia R2 usando ListBucketsCommand.
+ */
+async function testR2Connection(client) {
+  if (!client) return;
+  try {
+    const res = await client.send(new ListBucketsCommand({}));
+    console.log('✅ Conexión TLS correcta con Cloudflare R2:', res?.$metadata || '(sin metadata)');
+  } catch (err) {
+    const code = err && err.code ? err.code : '';
+    const msg = err && err.message ? err.message : String(err);
+    console.error('❌ Error TLS al conectar con Cloudflare R2:', code, msg);
+    if (msg.includes('EPROTO') || msg.includes('SSL') || code.includes('EPROTO') || code.includes('SSL')) {
+      console.error('🛠️ Revisa R2_ENDPOINT o el protocolo TLS (usa https://<ACCOUNT_ID>.r2.cloudflarestorage.com)');
+      console.error('❌ Error TLS detectado — revisar variables de entorno o endpoint');
+    }
   }
 }
 
@@ -486,81 +510,48 @@ function keepAlive() {
   }, 10 * 60 * 1000); // 10 minutos
 }
 
-// Inicialización: validar R2 y crear cliente antes de arrancar el servidor
+// Inicialización: validar R2, crear cliente, test TLS y arrancar servidor
 async function init() {
-  // Validar configuración básica
-  const ok = validateR2Config();
-  if (!ok) {
-    console.error('❌ Error de configuración en R2. Revisa tus variables de entorno.');
-    return; // no arrancar el servidor
-  }
-
-  // Mostrar información útil (sin exponer claves)
+  // Mostrar info básica
   try {
-    const url = new URL(process.env.R2_ENDPOINT);
     console.log(`🚀 Servidor intentando iniciar en ${PUBLIC_URL}`);
-    console.log(`🌐 R2 host: ${url.hostname}`);
+    console.log(`🔗 Endpoint R2: ${process.env.R2_ENDPOINT || '(no definido)'}`);
   } catch (err) {
     console.log(`🚀 Servidor intentando iniciar en ${PUBLIC_URL}`);
   }
 
-  console.log(`📦 Bucket R2: ${BUCKET_NAME || '(no definido)'}`);
+  console.log(`📦 Bucket: ${BUCKET_NAME || '(no definido)'}`);
   const hasAccessKey = !!process.env.R2_ACCESS_KEY_ID;
   const hasSecretKey = !!process.env.R2_SECRET_ACCESS_KEY;
-  console.log(`🔑 Credenciales present? accessKeyId: ${hasAccessKey ? 'sí' : 'no'}, secretAccessKey: ${hasSecretKey ? 'sí' : 'no'}`);
+  console.log(`🔑 Credenciales: ${hasAccessKey && hasSecretKey ? 'OK' : 'Falta'}`);
 
   // Si estamos en desarrollo, permitir temporalmente certificados no verificados (solo en dev)
   const isDev = process.env.NODE_ENV === 'development';
   if (isDev) {
-    console.warn('⚠️ Modo desarrollo detectado. Se deshabilita temporalmente la verificación TLS (NODE_TLS_REJECT_UNAUTHORIZED=0)');
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    console.warn('⚠️ TLS validation desactivada temporalmente (solo development)');
   }
 
-  // Intentar crear el cliente S3 (Cloudflare R2)
-  try {
-    r2Client = new S3Client({
-      region: 'auto',
-      endpoint: process.env.R2_ENDPOINT,
-      credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-      },
-      // Opciones recomendadas para Cloudflare R2
-      forcePathStyle: true,
-      tls: true,
-    });
-
-    // Si llegamos aquí el cliente fue creado sin lanzar excepción
-    // Iniciar servidor
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor ejecutándose en ${PUBLIC_URL}`);
-      console.log(`📦 Bucket R2: ${BUCKET_NAME}`);
-      console.log(`⏱️  Caché configurado: 45 minutos por imagen`);
-      console.log(`💚 Keep-alive activado: ping cada 10 minutos`);
-
-      // Iniciar keep-alive después de 5 minutos
-      setTimeout(keepAlive, 5 * 60 * 1000);
-    });
-
-  } catch (error) {
-    // Manejo específico de errores TLS/SSL
-    console.error('⚠️ Error al inicializar cliente R2:', error.message || error);
-    console.error('⚠️ Error de conexión TLS con Cloudflare R2, revisa las variables o credenciales.');
-    const msg = (error && error.message) ? error.message : '';
-    const code = (error && error.code) ? String(error.code) : '';
-    if (msg.includes('EPROTO') || msg.includes('SSL') || code.includes('EPROTO') || code.includes('SSL')) {
-      console.error('🔎 Sugerencia: revisa que R2_ENDPOINT use https:// y que las credenciales (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY) sean correctas.');
-    }
-    console.error('❌ Error de configuración en R2. Revisa tus variables de entorno.');
+  // Crear cliente R2
+  r2Client = createR2Client();
+  if (!r2Client) {
+    console.error('❌ No se pudo crear el cliente R2. Revisa R2_ENDPOINT y credenciales.');
     return;
-  } finally {
-    // Restaurar comportamiento por defecto si estábamos en dev (opcional)
-    if (isDev) {
-      // No restauramos automáticamente aquí porque cambiarlo podría interferir durante la ejecución.
-      // Se deja comentado para que el operador lo gestione si lo desea.
-      // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
-    }
   }
+
+  // Test de conexión TLS
+  await testR2Connection(r2Client);
+
+  // Iniciar servidor
+  app.listen(PORT, () => {
+    console.log(`🚀 Servidor ejecutándose en ${PUBLIC_URL}`);
+    console.log(`📦 Bucket R2: ${BUCKET_NAME || '(no definido)'}`);
+    console.log('⏱️  Caché configurado: 45 minutos por imagen');
+    console.log('💚 Keep-alive activado: ping cada 10 minutos');
+
+    // Iniciar keep-alive después de 5 minutos
+    setTimeout(keepAlive, 5 * 60 * 1000);
+  });
 }
 
 // Ejecutar inicialización
