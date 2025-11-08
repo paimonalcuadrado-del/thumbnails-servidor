@@ -18,17 +18,57 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static('public'));
 
 // Configuración de Cloudflare R2 (compatible con S3 API)
-const r2Client = new S3Client({
-  region: 'auto',
-  endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-});
+let r2Client = null; // se inicializará tras validar las variables
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+
+/**
+ * Valida la configuración de R2 y normaliza R2_ENDPOINT si es necesario.
+ * Devuelve true si la configuración parece válida, false si hay un error fatal.
+ */
+function validateR2Config() {
+  const raw = process.env.R2_ENDPOINT || '';
+
+  if (!raw || raw.trim() === '') {
+    console.error('❌ R2_ENDPOINT vacío. Debes definir la variable de entorno R2_ENDPOINT.');
+    return false;
+  }
+
+  let endpoint = raw.trim();
+
+  // Si no tiene prefijo http/https, asumimos https y añadimos, mostrando advertencia
+  if (!endpoint.toLowerCase().startsWith('http://') && !endpoint.toLowerCase().startsWith('https://')) {
+    console.warn(`⚠️ R2_ENDPOINT no tenía esquema. Se añadirá 'https://' automáticamente -> ${endpoint}`);
+    endpoint = `https://${endpoint}`;
+    // No modificamos process.env para evitar efectos secundarios, pero usamos la variable normalizada
+    process.env.R2_ENDPOINT = endpoint;
+  }
+
+  // Intentar parsear la URL
+  try {
+    const url = new URL(process.env.R2_ENDPOINT);
+    if (!url.hostname) {
+      console.error('❌ R2_ENDPOINT mal formado (sin hostname).');
+      return false;
+    }
+
+    // Solo mostrar dominio en logs, no claves
+    console.log(`🌐 R2 endpoint: ${url.hostname}`);
+
+    // Protocol check
+    if (url.protocol === 'https:') {
+      console.log('🔒 TLS OK');
+    } else {
+      console.warn('⚠️ R2_ENDPOINT no usa HTTPS. Se recomienda usar https:// para conexiones seguras.');
+    }
+
+    return true;
+  } catch (err) {
+    console.error('❌ R2_ENDPOINT mal formado:', err.message);
+    return false;
+  }
+}
 
 // Caché para conversiones WebP -> PNG (45 minutos = 2700 segundos)
 const imageCache = new NodeCache({ stdTTL: 2700, checkperiod: 300 });
@@ -439,16 +479,82 @@ function keepAlive() {
   }, 10 * 60 * 1000); // 10 minutos
 }
 
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ejecutándose en ${PUBLIC_URL}`);
-  console.log(`📦 Bucket R2: ${BUCKET_NAME}`);
-  console.log(`⏱️  Caché configurado: 45 minutos por imagen`);
-  console.log(`💚 Keep-alive activado: ping cada 10 minutos`);
-  
-  // Iniciar keep-alive después de 5 minutos
-  setTimeout(keepAlive, 5 * 60 * 1000);
-});
+// Inicialización: validar R2 y crear cliente antes de arrancar el servidor
+async function init() {
+  // Validar configuración básica
+  const ok = validateR2Config();
+  if (!ok) {
+    console.error('❌ Error de configuración en R2. Revisa tus variables de entorno.');
+    return; // no arrancar el servidor
+  }
+
+  // Mostrar información útil (sin exponer claves)
+  try {
+    const url = new URL(process.env.R2_ENDPOINT);
+    console.log(`🚀 Servidor intentando iniciar en ${PUBLIC_URL}`);
+    console.log(`🌐 R2 host: ${url.hostname}`);
+  } catch (err) {
+    console.log(`🚀 Servidor intentando iniciar en ${PUBLIC_URL}`);
+  }
+
+  console.log(`📦 Bucket R2: ${BUCKET_NAME || '(no definido)'}`);
+  const hasAccessKey = !!process.env.R2_ACCESS_KEY_ID;
+  const hasSecretKey = !!process.env.R2_SECRET_ACCESS_KEY;
+  console.log(`🔑 Credenciales present? accessKeyId: ${hasAccessKey ? 'sí' : 'no'}, secretAccessKey: ${hasSecretKey ? 'sí' : 'no'}`);
+
+  // Si estamos en desarrollo, permitir temporalmente certificados no verificados (solo en dev)
+  const isDev = process.env.NODE_ENV === 'development';
+  if (isDev) {
+    console.warn('⚠️ Modo desarrollo detectado. Se deshabilita temporalmente la verificación TLS (NODE_TLS_REJECT_UNAUTHORIZED=0)');
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
+
+  // Intentar crear el cliente S3 (Cloudflare R2)
+  try {
+    r2Client = new S3Client({
+      region: 'auto',
+      endpoint: process.env.R2_ENDPOINT,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      },
+    });
+
+    // Si llegamos aquí el cliente fue creado sin lanzar excepción
+    // Iniciar servidor
+    app.listen(PORT, () => {
+      console.log(`🚀 Servidor ejecutándose en ${PUBLIC_URL}`);
+      console.log(`📦 Bucket R2: ${BUCKET_NAME}`);
+      console.log(`⏱️  Caché configurado: 45 minutos por imagen`);
+      console.log(`💚 Keep-alive activado: ping cada 10 minutos`);
+
+      // Iniciar keep-alive después de 5 minutos
+      setTimeout(keepAlive, 5 * 60 * 1000);
+    });
+
+  } catch (error) {
+    // Manejo específico de errores TLS/SSL
+    console.error('⚠️ Error al inicializar cliente R2:', error.message || error);
+    console.error('⚠️ Error de conexión TLS con Cloudflare R2, revisa las variables o credenciales.');
+    const msg = (error && error.message) ? error.message : '';
+    const code = (error && error.code) ? String(error.code) : '';
+    if (msg.includes('EPROTO') || msg.includes('SSL') || code.includes('EPROTO') || code.includes('SSL')) {
+      console.error('🔎 Sugerencia: revisa que R2_ENDPOINT use https:// y que las credenciales (R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY) sean correctas.');
+    }
+    console.error('❌ Error de configuración en R2. Revisa tus variables de entorno.');
+    return;
+  } finally {
+    // Restaurar comportamiento por defecto si estábamos en dev (opcional)
+    if (isDev) {
+      // No restauramos automáticamente aquí porque cambiarlo podría interferir durante la ejecución.
+      // Se deja comentado para que el operador lo gestione si lo desea.
+      // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '1';
+    }
+  }
+}
+
+// Ejecutar inicialización
+init();
 
 // ============================================
 // ENDPOINT: Subir PNG binario directo (sin multipart, usando express.raw)
