@@ -41,9 +41,16 @@ function validateR2Config() {
   if (!endpoint.toLowerCase().startsWith('http://') && !endpoint.toLowerCase().startsWith('https://')) {
     console.warn(`⚠️ R2_ENDPOINT no tenía esquema. Se añadirá 'https://' automáticamente -> ${endpoint}`);
     endpoint = `https://${endpoint}`;
-    // No modificamos process.env para evitar efectos secundarios, pero usamos la variable normalizada
-    process.env.R2_ENDPOINT = endpoint;
   }
+
+  // Eliminar barras finales redundantes
+  if (endpoint.endsWith('/')) {
+    console.warn(`⚠️ R2_ENDPOINT tenía barra(es) final(es). Se eliminarán para evitar problemas de handshake -> ${endpoint}`);
+    endpoint = endpoint.replace(/\/+$/, '');
+  }
+
+  // Normalizar en env para uso posterior
+  process.env.R2_ENDPOINT = endpoint;
 
   // Intentar parsear la URL
   try {
@@ -518,6 +525,9 @@ async function init() {
         accessKeyId: process.env.R2_ACCESS_KEY_ID,
         secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
       },
+      // Opciones recomendadas para Cloudflare R2
+      forcePathStyle: true,
+      tls: true,
     });
 
     // Si llegamos aquí el cliente fue creado sin lanzar excepción
